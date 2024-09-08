@@ -10,7 +10,7 @@ all: $(addprefix examples/,$(EXAMPLES:=.svg) $(EXAMPLES:=.dot))
 
 .PHONY: clean
 clean:
-	rm -f shortestpath.d shortestpath.o shortestpath
+	rm -f shortestpath.d shortestpath.o shortestpath randomgraph
 	find examples/ -type f \( -name '*.dot' -o -name '*.svg' \) -delete
 
 examples/random.txt: randomgraph
