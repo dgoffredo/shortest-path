@@ -21,6 +21,7 @@
 //      } // This will destroy 9, 8, 4, 3, 2, and 1.
 
 #include <cassert>
+#include <cstddef>
 #include <iterator>
 #include <utility>
 
@@ -87,6 +88,7 @@ struct iterator_traits<LispyListIterator<Value>> {
   using pointer = const Value*;
   using reference = const Value&;
   using iterator_category = std::forward_iterator_tag;
+  using difference_type = std::ptrdiff_t;
 };
 
 } // namespace std

@@ -1,1 +1,6 @@
+# build artifacts
 /a.out
+/shortestpath
+/*.d
+/*.o
+

@@ -1,11 +1,16 @@
 #include "lispylist.h"
 #include <algorithm>
 #include <cassert>
+#include <cstdlib>
 #include <iostream>
 #include <istream>
 #include <memory>
+#include <ostream>
+#include <string_view>
 #include <sstream>
 #include <vector>
+
+std::ostream debug{nullptr};
 
 struct Edge {
   int from; // vertex name, `>= 0`
@@ -35,7 +40,7 @@ std::vector<LispyList<VertexState>> cheapest_paths(
   std::vector<LispyList<VertexState>> current_layer;
   int layer_count = 1; // TODO: no
   for (; layer != layers_end; ++layer, ++layer_count /*TODO: no*/) {
-    std::cout << "Examining layer " << layer_count << '\n';
+    debug << "Examining layer " << layer_count << '\n';
     // Deduce which vertices are in a layer by examining the vertices named in
     // the edges between the two layers.
     int max_previous_vertex = -1;
@@ -49,15 +54,15 @@ std::vector<LispyList<VertexState>> cheapest_paths(
     previous_layer.resize(max_previous_vertex + 1);
     current_layer.clear();
     current_layer.resize(max_current_vertex + 1);
-    std::cout << "    previous layer has " << previous_layer.size() << " vertices\n";
-    std::cout << "    current layer has " << current_layer.size() << " vertices\n";
+    debug << "    previous layer has " << previous_layer.size() << " vertices\n";
+    debug << "    current layer has " << current_layer.size() << " vertices\n";
 
     // Update `current_layer` (and `previous_layer`, if necessary) based on the
     // edges between the two layers.
     for (auto iter = edges_begin; iter != edges_end; ++iter) {
       const auto [from, to, weight] = *iter;
       if (previous_layer[from] == nil) {
-        std::cout << "    previous vertex " << from << " now has minimum weight zero\n";
+        debug << "    previous vertex " << from << " now has minimum weight zero\n";
         previous_layer[from] = nil.prepend(VertexState{
           .least_total_weight_to_here = 0,
           .vertex = from
@@ -66,7 +71,7 @@ std::vector<LispyList<VertexState>> cheapest_paths(
       const VertexState& previous = previous_layer[from].head();
       const double proposed_total = previous.least_total_weight_to_here + weight;
       if (current_layer[to] == nil || current_layer[to].head().least_total_weight_to_here > proposed_total) {
-        std::cout << "    current vertex " << to << " now has minimum weight " << proposed_total << '\n';
+        debug << "    current vertex " << to << " now has minimum weight " << proposed_total << '\n';
         current_layer[to] = previous_layer[from].prepend(VertexState{
           .least_total_weight_to_here = proposed_total,
           .vertex = to
@@ -110,11 +115,34 @@ std::vector<LispyList<VertexState>> cheapest_paths(
   return previous_layer;
 }
 
+void print_layer_subgraph(
+    int layer,
+    const std::vector<int>& vertices,
+    std::ostream& graphviz) {
+  graphviz <<
+    "\n"
+    "  subgraph cluster_" << layer << " {\n"
+    "    style=filled;\n"
+    "    color=lightgrey;\n"
+    "    node [style=filled, color=white];\n"
+    "    label = \"Layer " << layer << "\";\n"
+    "\n";
+  for (const int vertex : vertices) {
+    graphviz <<
+    "    node_" << layer << "_" << vertex << " [label=\"" << vertex << "\"];\n";
+  }
+  graphviz <<
+    "  }\n";
+}
+
 bool read_layer(
     std::istream& lines,
     std::string& buffer,
     std::istringstream& buffer_stream,
-    std::vector<Edge>& destination) {
+    std::vector<Edge>& destination,
+    std::ostream& graphviz,
+    std::vector<int>& vertices_scratch,
+    int layer) {
   destination.clear();
 
   if (!std::getline(lines, buffer)) {
@@ -129,7 +157,7 @@ bool read_layer(
   for (;;) {
     buffer_stream >> from;
     if (!buffer_stream) {
-      return true;
+      break;
     }
     buffer_stream >> to >> weight;
     if (!buffer_stream) {
@@ -137,6 +165,44 @@ bool read_layer(
     }
     destination.push_back(Edge{.from = from, .to = to, .weight = weight});
   }
+
+  // Append graph output:
+
+  // We'll use `vertices` to determine the distinct `from` vertices (at least
+  // for the first layer) and `to` vertices (for all layers).
+  std::vector<int>& vertices = vertices_scratch;
+
+  if (layer == 1) {
+    // Edges go from layer n-1 to layer n. If this is layer 1, then we have to
+    // state the nodes for layer 0 first.
+    for (const Edge& edge : destination) {
+      vertices.push_back(edge.from);
+    }
+    std::sort(vertices.begin(), vertices.end());
+    vertices.erase(std::unique(vertices.begin(), vertices.end()), vertices.end());
+    print_layer_subgraph(0, vertices, graphviz);
+    vertices.clear();
+  }
+
+  // Print the "to" vertices.
+  for (const Edge& edge : destination) {
+    vertices.push_back(edge.to);
+  }
+  std::sort(vertices.begin(), vertices.end());
+  vertices.erase(std::unique(vertices.begin(), vertices.end()), vertices.end());
+  print_layer_subgraph(layer, vertices, graphviz);
+
+  // Print all of the edges.
+  graphviz <<
+    "\n";
+  for (const Edge& edge : destination) {
+    graphviz <<
+    "  node_" << (layer - 1) << "_" << edge.from << " -> node_" << layer << "_" << edge.to << " [label=\"" << edge.weight << "\"]\n";
+  }
+
+  vertices.clear();
+
+  return true;
 }
 
 struct LayerGeneratorState {
@@ -144,6 +210,9 @@ struct LayerGeneratorState {
   std::istream& input;
   std::string buffer;
   std::istringstream buffer_stream;
+  std::ostream& graphviz;
+  std::vector<int> vertices_scratch;
+  int layer;
 };
 
 class LayerIterator {
@@ -153,16 +222,31 @@ public:
   LayerIterator()
   : state(nullptr) {
   }
-  explicit LayerIterator(std::istream& input)
-  : state(new LayerGeneratorState{.incoming = {}, .input = input, .buffer = {}, .buffer_stream = {}}) {
-    // Get the initial layer, if any.
+  explicit LayerIterator(std::istream& input, std::ostream& graphviz)
+  : state(new LayerGeneratorState{
+      .incoming = {},
+      .input = input,
+      .buffer = {},
+      .buffer_stream = {},
+      .graphviz = graphviz,
+      .vertices_scratch = {},
+      .layer = 0
+    }) {
+    // Get the initial layer.
     ++(*this);
   }
   LayerIterator(const LayerIterator&) = default;
   LayerIterator(LayerIterator&&) = default;
 
   LayerIterator& operator++() {
-    if (!read_layer(state->input, state->buffer, state->buffer_stream, state->incoming)) {
+    if (!read_layer(
+        state->input,
+        state->buffer,
+        state->buffer_stream,
+        state->incoming,
+        state->graphviz,
+        state->vertices_scratch,
+        ++state->layer)) {
       state.reset();
     }
     return *this;
@@ -193,15 +277,55 @@ public:
 };
 
 int main() {
-  const std::vector<LispyList<VertexState>> paths = cheapest_paths(
-    LayerIterator{std::cin},
-    LayerIterator{});
-  std::cout << "Optimal paths (backwards):\n";
-  for (const LispyList<VertexState>& list : paths) {
-    std::cout << "weight " << list.head().least_total_weight_to_here << ':';
-    for (auto it = list.begin(); it != list.end(); ++it) {
-      std::cout << " -> " << it->vertex;
+  if (const char *raw = std::getenv("DEBUG")) {
+    if (std::string_view{raw} == "1") {
+      debug.rdbuf(std::cerr.rdbuf());
     }
-    std::cout << '\n';
   }
+
+  std::cout <<
+    "strict digraph {\n"
+    "  fontname=\"Helvetica,Arial,sans-serif\"\n"
+    "  node [fontname=\"Helvetica,Arial,sans-serif\"]\n"
+    "  edge [fontname=\"Helvetica,Arial,sans-serif\", fontsize=\"8pt\"]\n"
+    "  rankdir=\"LR\";\n";
+
+  const std::vector<LispyList<VertexState>> paths = cheapest_paths(
+    LayerIterator{std::cin, std::cout},
+    LayerIterator{});
+  int num_layers = -1;
+  debug << "Optimal paths (backwards):\n";
+  std::cout <<
+    "\n";
+  for (int i = 0; i < int(paths.size()); ++i) {
+    const LispyList<VertexState>& list = paths[i];
+    if (num_layers == -1) {
+      num_layers = std::distance(list.begin(), list.end());
+    }
+    int current_layer = num_layers - 1;
+    debug << "weight " << list.head().least_total_weight_to_here << ':';
+    int to = -1;
+    int from = -1;
+    for (auto it = list.begin(); it != list.end(); ++it, --current_layer) {
+      // debug << "current layer is " << current_layer << '\n';
+      debug << " -> " << it->vertex;
+      if (to == -1) {
+        to = it->vertex;
+        continue;
+      } else if (from == -1) {
+        from = it->vertex;
+      } else {
+        to = from;
+        from = it->vertex;
+      }
+      std::cout <<
+    "  node_" << current_layer << "_" << from << " -> node_" << (current_layer + 1) << "_" << to << " [penwidth=\"3\", color=\"red\"];\n";
+    }
+    // std::cout <<
+    // "  node_0_" << from << " -> node_1_" << to << " [penwidth=\"3\", color=\"red\"];\n";
+    debug << '\n';
+  }
+
+  std::cout <<
+    "}\n";
 }
