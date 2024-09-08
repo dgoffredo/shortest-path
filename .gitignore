@@ -1,5 +1,6 @@
 # build artifacts
 /a.out
+/randomgraph
 /shortestpath
 /*.d
 /*.o

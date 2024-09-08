@@ -3,13 +3,21 @@ CPPFLAGS = -MMD
 # the usual...
 CXXFLAGS = --std=c++20 -O2 -Wall -Wextra -pedantic -Werror
 
+EXAMPLES = simple complex dupey random
+
 .PHONY: all
-all: examples/simple.svg examples/complex.svg examples/dupey.svg
+all: $(addprefix examples/,$(EXAMPLES:=.svg) $(EXAMPLES:=.dot))
 
 .PHONY: clean
 clean:
 	rm -f shortestpath.d shortestpath.o shortestpath
 	find examples/ -type f \( -name '*.dot' -o -name '*.svg' \) -delete
+
+examples/random.txt: randomgraph
+	RAND_SEED=1337 ./randomgraph >$@
+
+randomgraph: randomgraph.cpp
+	$(CXX) $(CXXFLAGS) -o $@ $^
 
 shortestpath: shortestpath.o
 	$(CXX) -o $@ $^
