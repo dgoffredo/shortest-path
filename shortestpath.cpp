@@ -38,8 +38,8 @@ std::vector<LispyList<VertexState>> cheapest_paths(
   // an input iterator (so layers can be generated lazily).
   std::vector<LispyList<VertexState>> previous_layer;
   std::vector<LispyList<VertexState>> current_layer;
-  int layer_count = 1; // TODO: no
-  for (; layer != layers_end; ++layer, ++layer_count /*TODO: no*/) {
+  int layer_count = 1;
+  for (; layer != layers_end; ++layer, ++layer_count) {
     debug << "Examining layer " << layer_count << '\n';
     // Deduce which vertices are in a layer by examining the vertices named in
     // the edges between the two layers.
