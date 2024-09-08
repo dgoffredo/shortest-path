@@ -42,7 +42,7 @@ int main() {
     for (int to = 0; to < num_vertices; ++to) {
       const int inward_edges = inward_edges_per_vertex(generator);
       for (int edge = 0; edge < inward_edges; ++edge) {
-        std::cout << from(generator) << ' ' << to << ' ' << std::setprecision(1) << edge_weight(generator) << '\t';
+        std::cout << from(generator) << ' ' << to << ' ' << std::setprecision(2) << edge_weight(generator) << '\t';
       }
     }
     std::cout << '\n';
