@@ -1,5 +1,26 @@
+// `LispyList<Value>` is an immutable singly linked list of `const Value`.
+//
+// Each element in the list is reference counted. An element is destroyed when
+// no more `LispyList` instances contain it.
+//
+// For example:
+//
+//     // y := 7 6 5
+//     //           \.
+//     //      x := 4 3 2 1
+//     //           /
+//     //   z := 9 8
+//     {
+//        using List = LispyList<int>;
+//        List x = List().prepend(1).prepend(2).prepend(3).prepend(4);
+//        List y = x.prepend(5).prepend(6).prepend(7);
+//        List z = x.prepend(8).prepend(9);
+//
+//        x = List(); // This will destroy nothing.
+//        y = List(); // This will destroy 7, 6, and 5.
+//      } // This will destroy 9, 8, 4, 3, 2, and 1.
+
 #include <cassert>
-#include <iostream> // TODO: no
 #include <iterator>
 #include <utility>
 
@@ -34,6 +55,9 @@ class LispyList {
 
   LispyListIterator<Value> begin() const;
   LispyListIterator<Value> end() const;
+
+  bool operator==(const LispyList& other) const;
+  bool operator!=(const LispyList& other) const;
 };
 
 template <typename Value>
@@ -47,6 +71,7 @@ public:
   LispyListIterator(LispyListIterator&&) = default;
 
   const Value& operator*() const;
+  const Value *operator->() const;
   LispyListIterator& operator++();
   LispyListIterator operator++(int) const;
 
@@ -71,11 +96,6 @@ struct LispyListNode {
   const Value value;
   int refcount;
   LispyListNode *const next;
-
-  // TODO: no
-  ~LispyListNode() {
-    std::cout << "destroying node with value " << value << '\n';
-  }
 };
 
 // Implementation
@@ -162,6 +182,11 @@ LispyList<Value> LispyList<Value>::tail() const {
 }
 
 template <typename Value>
+bool LispyList<Value>::empty() const {
+  return node == nullptr;
+}
+
+template <typename Value>
 LispyList<Value> LispyList<Value>::prepend(Value value) const {
   if (node) {
     ++node->refcount;
@@ -184,6 +209,16 @@ LispyListIterator<Value> LispyList<Value>::end() const {
   return LispyListIterator<Value>();
 }
 
+template <typename Value>
+bool LispyList<Value>::operator==(const LispyList<Value>& other) const {
+  return node == other.node;
+}
+
+template <typename Value>
+bool LispyList<Value>::operator!=(const LispyList<Value>& other) const {
+  return node != other.node;
+}
+
 // class LispyListIterator<Value>
 // ------------------------------
 template <typename Value>
@@ -198,6 +233,11 @@ template <typename Value>
 const Value& LispyListIterator<Value>::operator*() const {
   assert(node);
   return node->value;
+}
+
+template <typename Value>
+const Value *LispyListIterator<Value>::operator->() const {
+  return &**this;
 }
 
 template <typename Value>
